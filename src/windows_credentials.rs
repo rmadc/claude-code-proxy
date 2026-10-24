@@ -4,6 +4,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::{fs, path::Path, ptr};
 
+static MIGRATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[repr(C)]
 struct Blob {
     len: u32,
@@ -121,6 +123,9 @@ pub fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
     primary: &str,
     legacy: &str,
 ) -> Result<Option<T>> {
+    let _migration = MIGRATION_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("Windows credential migration lock unavailable"))?;
     if let Some(value) = read(primary)? {
         return Ok(Some(serde_json::from_value(value)?));
     }
@@ -139,10 +144,18 @@ pub fn load<T: serde::de::DeserializeOwned + serde::Serialize>(
         save(primary, &value)?;
         // Failure leaves both copies intact and is reported; never fall back to
         // plaintext after an unreadable protected copy.
-        fs::remove_file(Path::new(source))?;
+        if let Err(err) = fs::remove_file(Path::new(source))
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(err.into());
+        }
         return Ok(Some(value));
     }
-    Ok(None)
+    // Another process may have retired plaintext after our first protected read.
+    read(primary)?
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -192,5 +205,26 @@ mod tests {
         fs::write(protected_path(&primary), r#"{"dpapi_v1":"AAAA"}"#).unwrap();
         assert!(load::<Value>(&primary, &legacy).is_err());
         assert!(Path::new(&legacy).exists());
+    }
+
+    #[test]
+    fn concurrent_first_loads_all_receive_verified_credentials() {
+        let temp = tempdir().unwrap();
+        let primary = temp.path().join("auth.json").to_str().unwrap().to_owned();
+        fs::write(&primary, r#"{"access":"synthetic-concurrent"}"#).unwrap();
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(12));
+        std::thread::scope(|scope| {
+            for _ in 0..12 {
+                let barrier = barrier.clone();
+                let primary = &primary;
+                scope.spawn(move || {
+                    barrier.wait();
+                    let value = load::<Value>(primary, primary).unwrap().unwrap();
+                    assert_eq!(value["access"], "synthetic-concurrent");
+                });
+            }
+        });
+        assert!(!Path::new(&primary).exists());
+        assert!(read(&primary).unwrap().is_some());
     }
 }
