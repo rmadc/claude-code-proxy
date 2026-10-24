@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod catalog;
 pub mod chat_completions;
 pub mod client;
 pub mod compaction;
@@ -1435,7 +1436,7 @@ fn update_continuation_from_upstream(
 ///
 /// `Retry-After` is deliberately absent: clients sleep for its full value, and
 /// here that is hours. `x-should-retry: false` stops the retry loop instead,
-/// which is the honest signal — a spent window does not reopen on a backoff.
+/// which is the honest signal â€” a spent window does not reopen on a backoff.
 fn usage_limit_response(limit: &events::CodexUsageLimit) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert(

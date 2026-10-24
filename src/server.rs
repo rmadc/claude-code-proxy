@@ -233,6 +233,37 @@ pub fn app_with_features(
     monitor: Option<MonitorHandle>,
     features: AppFeatures,
 ) -> Router {
+    build_app(
+        registry,
+        monitor,
+        features,
+        crate::client_auth::ClientAuth::from_env().ok(),
+    )
+}
+
+pub fn app_for_launcher(
+    registry: Arc<Registry>,
+    monitor: Option<MonitorHandle>,
+    auth: crate::client_auth::ClientAuth,
+) -> Router {
+    build_app(
+        registry,
+        monitor,
+        AppFeatures {
+            responses_api: crate::config::codex_responses_api(),
+            images_api: crate::config::codex_images_api(),
+            transcriptions_api: crate::config::codex_transcriptions_api(),
+        },
+        Some(auth),
+    )
+}
+
+fn build_app(
+    registry: Arc<Registry>,
+    monitor: Option<MonitorHandle>,
+    features: AppFeatures,
+    auth: Option<crate::client_auth::ClientAuth>,
+) -> Router {
     let native_responses = features
         .responses_api
         .then(|| Arc::new(CodexNativeBackend::new()));
@@ -263,13 +294,16 @@ pub fn app_with_features(
         chat_completions,
         images,
         transcriptions,
+        catalog: Arc::new(crate::providers::codex::catalog::CatalogCache::default()),
     });
     let router = Router::new()
         .route("/healthz", get(healthz))
         .route("/monitor", get(handler_monitor))
         .route("/v1/messages", post(handler_messages))
         .route("/v1/messages/count_tokens", post(handler_count_tokens))
-        .route("/v1/models", get(handler_models));
+        .route("/v1/models", get(handler_models))
+        .route("/v1/models/{model_id}", get(handler_model))
+        .route("/v1/codex/models", get(handler_codex_catalog));
     let router = if features.responses_api {
         router
             .route("/v1/responses", post(handler_responses))
@@ -297,7 +331,6 @@ pub fn app_with_features(
         router
     };
     // Invalid configured tokens fail closed even for embedders using app().
-    let auth = crate::client_auth::ClientAuth::from_env().ok();
     router
         .fallback(fallback_handler)
         .with_state(state)
@@ -318,6 +351,7 @@ pub fn app_with_features(
 
 #[derive(Clone)]
 struct AppState {
+    catalog: Arc<crate::providers::codex::catalog::CatalogCache>,
     registry: Arc<Registry>,
     monitor: Option<MonitorHandle>,
     native_responses: Option<Arc<CodexNativeBackend>>,
@@ -391,6 +425,19 @@ async fn handler_models(
             })
         })
         .collect();
+    // Preserve offline/static listing for other providers and unauthenticated
+    // installations. The launcher uses the strict catalog endpoint instead.
+    let mut catalog_source = "static";
+    if let Ok(models) = state.catalog.get().await {
+        data.retain(|entry| {
+            !entry
+                .get("display_name")
+                .and_then(Value::as_str)
+                .is_some_and(|s| s.ends_with("(codex)"))
+        });
+        data.extend(models.iter().map(|model| model.anthropic_info()));
+        catalog_source = "authenticated_codex";
+    }
     let has_more = query.limit.is_some_and(|limit| data.len() > limit);
     if let Some(limit) = query.limit {
         data.truncate(limit);
@@ -399,9 +446,42 @@ async fn handler_models(
         "object": "list",
         "data": data,
         "has_more": has_more,
+        "catalog_source": catalog_source,
         "first_id": data.first().and_then(|entry| entry.get("id")).cloned(),
         "last_id": data.last().and_then(|entry| entry.get("id")).cloned(),
     }))
+}
+
+async fn handler_codex_catalog(State(state): State<Arc<AppState>>) -> Response {
+    match state.catalog.get().await {
+        Ok(models) => Json(json!({"models":models,"source":"authenticated_codex"})).into_response(),
+        Err(_) => json_error(
+            StatusCode::BAD_GATEWAY,
+            "catalog_unavailable",
+            "Authenticated Codex catalog unavailable; check provider authentication and connectivity",
+        ),
+    }
+}
+
+async fn handler_model(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    match state.catalog.get().await {
+        Ok(models) => match models.iter().find(|model| model.id == id) {
+            Some(model) => Json(model.anthropic_info()).into_response(),
+            None => json_error(
+                StatusCode::NOT_FOUND,
+                "not_found_error",
+                "Model not present in the compatible authenticated catalog",
+            ),
+        },
+        Err(_) => json_error(
+            StatusCode::BAD_GATEWAY,
+            "catalog_unavailable",
+            "Authenticated model metadata unavailable",
+        ),
+    }
 }
 
 async fn handler_messages(State(state): State<Arc<AppState>>, req: Request<Body>) -> Response {

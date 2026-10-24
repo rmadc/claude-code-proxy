@@ -19,6 +19,8 @@ async fn actual_router_rejects_unauthenticated_requests_and_invalid_configuratio
         "/healthz",
         "/monitor",
         "/v1/models",
+        "/v1/models/gpt-6-sol",
+        "/v1/codex/models",
         "/v1/messages",
         "/v1/responses",
         "/unknown",
