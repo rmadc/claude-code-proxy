@@ -6,7 +6,7 @@ description: Local routes for health checks, Anthropic Messages, token counts, m
 The server exposes the Anthropic and OpenAI routes supported by the proxy. Each route uses the configured provider credential for the selected model.
 
 <div class="security-callout">
-<strong>No client authentication.</strong> The listener accepts requests without validating `Authorization` or `x-api-key`. Loopback is the default. Protect every non-loopback listener with a firewall or authenticating reverse proxy.
+<strong>Optional client authentication.</strong> Set `CCP_CLIENT_TOKEN` to at least 32 printable ASCII characters without spaces. Every route then requires `Authorization: Bearer &lt;token&gt;` or `x-api-key: &lt;token&gt;`. Empty or invalid configured tokens fail closed. Loopback is the default; non-loopback binding requires a valid token and `CCP_ALLOW_NETWORK=1`. The listener is plain HTTP: use a trusted TLS tunnel for remote access.
 </div>
 
 ## `GET /healthz`

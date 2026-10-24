@@ -171,7 +171,15 @@ fn main() -> Result<()> {
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
+            let mut headers = reqwest::header::HeaderMap::new();
+            if let Ok(token) = std::env::var("CCP_CLIENT_TOKEN") {
+                // Explicit monitor target; never forward this token on redirects.
+                let mut value = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))?;
+                value.set_sensitive(true);
+                headers.insert(reqwest::header::AUTHORIZATION, value);
+            }
             let client = reqwest::Client::builder()
+                .default_headers(headers)
                 .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
                 .timeout(std::time::Duration::from_secs(2))

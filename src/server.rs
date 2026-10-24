@@ -137,6 +137,8 @@ pub async fn bind_proxy_listener(bind_address: &str, port: u16) -> anyhow::Resul
         .parse::<std::net::IpAddr>()
         .map_err(|err| anyhow::anyhow!("invalid proxy bind address {bind_address:?}: {err}"))?;
     let addr = std::net::SocketAddr::new(ip, port);
+    crate::client_auth::ClientAuth::from_env()?
+        .validate_bind(ip, std::env::var("CCP_ALLOW_NETWORK").as_deref() == Ok("1"))?;
     TcpListener::bind(addr)
         .await
         .map_err(|err| anyhow::anyhow!("failed to bind proxy listener on {addr}: {err}"))
@@ -148,6 +150,10 @@ pub async fn serve_listener(
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let local_addr = listener.local_addr()?;
+    crate::client_auth::ClientAuth::from_env()?.validate_bind(
+        local_addr.ip(),
+        std::env::var("CCP_ALLOW_NETWORK").as_deref() == Ok("1"),
+    )?;
     let port = local_addr.port();
     create_logger("server").info(
         "server listening",
@@ -292,7 +298,24 @@ pub fn app_with_features(
     } else {
         router
     };
-    router.fallback(fallback_handler).with_state(state)
+    // Invalid configured tokens fail closed even for embedders using app().
+    let auth = crate::client_auth::ClientAuth::from_env().ok();
+    router
+        .fallback(fallback_handler)
+        .with_state(state)
+        .layer(axum::middleware::from_fn(
+            move |request, next: axum::middleware::Next| {
+                let auth = auth.clone();
+                async move {
+                    match auth {
+                        Some(auth) => {
+                            crate::client_auth::require_auth(State(auth), request, next).await
+                        }
+                        None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                    }
+                }
+            },
+        ))
 }
 
 #[derive(Clone)]
