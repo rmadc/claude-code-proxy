@@ -55,6 +55,10 @@ migration race and preserved auto-review continuation isolation when no model
 override is selected. The migration has a 12-thread regression test. An upstream
 50 ms WebSocket timing test now uses Tokio's paused clock; its assertion remains.
 
+Final review also added an empty-DPAPI-payload assertion to the existing failure
+test and guarded zero-length output buffers. The three Windows credential tests
+and strict Clippy were rerun successfully after this small follow-up.
+
 To rerun everything in one invocation:
 
 ```powershell

@@ -77,7 +77,11 @@ fn transform(bytes: &[u8], protect: bool) -> Result<Vec<u8>> {
                 std::io::Error::last_os_error()
             );
         }
-        let result = std::slice::from_raw_parts(output.data, output.len as usize).to_vec();
+        let result = if output.len == 0 {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(output.data, output.len as usize).to_vec()
+        };
         LocalFree(output.data.cast());
         Ok(result)
     }
@@ -188,6 +192,10 @@ mod tests {
 
     #[test]
     fn failed_write_preserves_plaintext_and_corruption_fails_closed() {
+        // DPAPI permits empty plaintext; do not create a slice from a possible
+        // null zero-length output buffer when inspecting malformed records.
+        let empty = transform(&[], true).unwrap();
+        assert!(transform(&empty, false).unwrap().is_empty());
         let temp = tempdir().unwrap();
         let legacy = temp.path().join("legacy.json").to_str().unwrap().to_owned();
         fs::write(&legacy, r#"{"access":"synthetic"}"#).unwrap();
