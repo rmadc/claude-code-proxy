@@ -11,7 +11,12 @@ pub const MAX_LOG_BYTES: u64 = 20 * 1024 * 1024;
 
 static STDERR_SUPPRESSION_DEPTH: AtomicUsize = AtomicUsize::new(0);
 
-pub const REDACT_KEYS: [&str; 15] = [
+pub const REDACT_KEYS: [&str; 20] = [
+    "accesstoken",
+    "refreshtoken",
+    "client_token",
+    "clienttoken",
+    "ccp_client_token",
     "authorization",
     "proxy-authorization",
     "access",
@@ -98,6 +103,12 @@ impl Logger {
         if let Some(fields) = fields {
             merged.extend(fields);
         }
+        // Upstream error prose and request bodies can echo arbitrary secrets.
+        // Known-key redaction alone cannot make these safe for routine logs.
+        omit_content(
+            &mut merged,
+            std::env::var("CCP_LOG_CONTENT").as_deref() == Ok("1"),
+        );
         if !merged.is_empty() {
             body.insert("fields".into(), redact_value(Value::Object(merged)));
         }
@@ -111,6 +122,26 @@ impl Logger {
 
         if write_log_line(&line).is_err() && mirror_to_stderr {
             // swallow logging errors intentionally
+        }
+    }
+}
+
+fn omit_content(fields: &mut serde_json::Map<String, Value>, include_content: bool) {
+    if include_content {
+        return;
+    }
+    for key in [
+        "message",
+        "error",
+        "body",
+        "request",
+        "response",
+        "responseBody",
+        "requestBody",
+        "bodyReadError",
+    ] {
+        if fields.contains_key(key) {
+            fields.insert(key.into(), Value::String("[content omitted]".into()));
         }
     }
 }
@@ -133,6 +164,7 @@ fn write_log_line(line: &str) -> io::Result<()> {
     }
 
     let mut out = OpenOptions::new().create(true).append(true).open(&file)?;
+    set_mode(&file, 0o600);
     out.write_all(line.as_bytes())?;
     out.write_all(b"\n")?;
     Ok(())
@@ -145,7 +177,44 @@ fn rotate_file(path: &Path) -> io::Result<()> {
         .as_millis();
     let rotated = path.with_extension(format!("{ts}"));
     fs::rename(path, rotated)?;
+    if let Some(dir) = path.parent() {
+        prune_files(dir, "proxy.", "", 3);
+    }
     Ok(())
+}
+
+/// Bound our own regular capture files; never follow directory symlinks.
+pub(crate) fn prune_files(dir: &Path, prefix: &str, extension: &str, keep: usize) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if prefix == "proxy."
+                && !name.strip_prefix(prefix).is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                })
+            {
+                return None;
+            }
+            if !entry.file_type().ok()?.is_file()
+                || !name.starts_with(prefix)
+                || (!extension.is_empty() && entry.path().extension()?.to_str()? != extension)
+                || name == "proxy.log"
+            {
+                return None;
+            }
+            Some((entry.metadata().ok()?.modified().ok()?, entry.path()))
+        })
+        .collect();
+    files.sort_by_key(|(modified, _)| *modified);
+    let remove = files.len().saturating_sub(keep);
+    for (_, path) in files.into_iter().take(remove) {
+        let _ = fs::remove_file(path);
+    }
 }
 
 fn create_dir(path: &Path, mode: u32) -> io::Result<()> {
@@ -155,6 +224,8 @@ fn create_dir(path: &Path, mode: u32) -> io::Result<()> {
 }
 
 fn set_mode(path: &Path, mode: u32) {
+    #[cfg(not(unix))]
+    let _ = (path, mode);
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -189,7 +260,11 @@ fn redact_with_depth(value: Value, depth: u8) -> Value {
             if config::log_verbose() {
                 Value::String(s)
             } else if s.len() > 4000 {
-                Value::String(format!("{}…[{} more]", &s[..4000], s.len() - 4000))
+                let mut end = 4000;
+                while !s.is_char_boundary(end) {
+                    end -= 1;
+                }
+                Value::String(format!("{}…[{} more]", &s[..end], s.len() - end))
             } else {
                 Value::String(s)
             }
@@ -232,6 +307,52 @@ mod tests {
     use std::sync::Mutex;
 
     static STDERR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn sensitive_error_prose_is_opt_in_and_retention_is_bounded() {
+        let mut fields = serde_json::Map::from_iter([
+            ("status".into(), serde_json::json!(401)),
+            (
+                "message".into(),
+                serde_json::json!("echoed synthetic credential"),
+            ),
+            ("error".into(), serde_json::json!("echoed synthetic prompt")),
+        ]);
+        omit_content(&mut fields, false);
+        assert!(
+            !serde_json::to_string(&fields)
+                .unwrap()
+                .contains("synthetic")
+        );
+        assert_eq!(fields["status"], 401);
+        let temp = tempfile::tempdir().unwrap();
+        for i in 0..8 {
+            fs::write(temp.path().join(format!("proxy.{i}")), "test").unwrap();
+        }
+        fs::write(temp.path().join("proxy.log"), "active").unwrap();
+        fs::write(temp.path().join("unrelated"), "keep").unwrap();
+        fs::write(temp.path().join("proxy.config"), "keep").unwrap();
+        prune_files(temp.path(), "proxy.", "", 3);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 6);
+        assert!(temp.path().join("proxy.log").is_file());
+        assert!(temp.path().join("unrelated").is_file());
+        assert!(temp.path().join("proxy.config").is_file());
+    }
+
+    #[test]
+    fn camel_case_tokens_and_unicode_are_safe() {
+        let value = redact_value(
+            serde_json::json!({"accessToken":"synthetic", "refreshToken":"synthetic", "text":"a".repeat(3999) + "🦀🦀"}),
+        );
+        assert!(!value["accessToken"].as_str().unwrap().contains("synthetic"));
+        assert!(
+            !value["refreshToken"]
+                .as_str()
+                .unwrap()
+                .contains("synthetic")
+        );
+        assert!(value["text"].as_str().unwrap().is_char_boundary(3999));
+    }
 
     #[test]
     fn stderr_suppression_disables_level_mirroring() {

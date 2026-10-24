@@ -2039,8 +2039,12 @@ fn error_message_from_response(response_body: &Value) -> Option<String> {
 }
 
 fn write_error_capture(req_id: &str, document: &Value) -> Option<PathBuf> {
+    if std::env::var("CCP_ERROR_CAPTURE").as_deref() != Ok("1") {
+        return None;
+    }
     let dir = crate::paths::state_dir().join("errors");
     fs::create_dir_all(&dir).ok()?;
+    crate::logging::prune_files(&dir, "", "json", 99);
     set_mode(&dir, 0o700);
     let path = dir.join(format!(
         "{}-{}.json",
