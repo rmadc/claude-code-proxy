@@ -40,8 +40,15 @@ your profile, run the executable from its location:
 
 ```powershell
 $env:CCP_CONFIG_DIR = "$env:LOCALAPPDATA\claude-code-proxy-supervised"
-.\claude-code-proxy.exe claude --model gpt-6-sol
+.\claude-code-proxy.exe claude
 ```
+
+On first launch without `--model`, the launcher fetches compatible models and
+prompts you to choose one, saving it as `claudeDefaultModel` in the proxy's
+`config.json` (under `CCP_CONFIG_DIR` when set). Later launches use that saved
+model; `--model` overrides it for one launch. If the saved model is no longer
+available, an interactive launch prompts again. An interactive terminal is
+required for first-run selection.
 
 It queries the authenticated Codex catalog, supplies a `modelPicker` lineup to
 Claude, and starts an authenticated loopback proxy on a free port. Inside Claude,

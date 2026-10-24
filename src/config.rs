@@ -220,6 +220,56 @@ pub fn config_path() -> PathBuf {
     paths::config_dir().join("config.json")
 }
 
+pub fn launcher_default_model_at(path: &Path) -> anyhow::Result<Option<String>> {
+    let raw = match fs::read(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let config: serde_json::Value = serde_json::from_slice(&raw)?;
+    let object = config
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Proxy config must be a JSON object"))?;
+    let model = object.get("claudeDefaultModel");
+    match model {
+        None => Ok(None),
+        Some(serde_json::Value::String(model)) if !model.is_empty() => Ok(Some(model.clone())),
+        _ => anyhow::bail!("claudeDefaultModel must be a nonempty string"),
+    }
+}
+
+pub fn save_launcher_default_model_at(path: &Path, model: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(!model.is_empty(), "Cannot save an empty model");
+    let mut config: serde_json::Value = match fs::read(path) {
+        Ok(raw) => serde_json::from_slice(&raw)?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(error) => return Err(error.into()),
+    };
+    let object = config
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("Proxy config must be a JSON object"))?;
+    object.insert("claudeDefaultModel".into(), model.into());
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Invalid proxy config path"))?;
+    fs::create_dir_all(parent)?;
+    let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer_pretty(&mut staged, &config)?;
+    use std::io::Write;
+    staged.write_all(b"\n")?;
+    staged.as_file().sync_all()?;
+    staged.persist(path)?;
+    Ok(())
+}
+
+pub fn launcher_default_model() -> anyhow::Result<Option<String>> {
+    launcher_default_model_at(&config_path())
+}
+
+pub fn save_launcher_default_model(model: &str) -> anyhow::Result<()> {
+    save_launcher_default_model_at(&config_path(), model)
+}
+
 pub fn port() -> u16 {
     load_config().port
 }
@@ -1039,6 +1089,41 @@ mod tests {
             "CCP_CONFIG_DIR".to_string(),
             config.path().to_string_lossy().into_owned(),
         )])
+    }
+
+    #[test]
+    fn launcher_default_model_persists_without_losing_other_settings() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.json");
+        assert_eq!(launcher_default_model_at(&path).unwrap(), None);
+        fs::write(&path, r#"{"port":1234,"custom":{"enabled":true}}"#).unwrap();
+        save_launcher_default_model_at(&path, "gpt-6.1-sol").unwrap();
+        assert_eq!(
+            launcher_default_model_at(&path).unwrap().as_deref(),
+            Some("gpt-6.1-sol")
+        );
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["port"], 1234);
+        assert_eq!(value["custom"]["enabled"], true);
+        save_launcher_default_model_at(&path, "gpt-6-sol").unwrap();
+        assert_eq!(
+            launcher_default_model_at(&path).unwrap().as_deref(),
+            Some("gpt-6-sol")
+        );
+    }
+
+    #[test]
+    fn launcher_default_model_rejects_invalid_config_without_overwriting_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("config.json");
+        for raw in ["invalid", "[]", r#"{"claudeDefaultModel":42}"#] {
+            fs::write(&path, raw).unwrap();
+            assert!(launcher_default_model_at(&path).is_err());
+            if raw != r#"{"claudeDefaultModel":42}"# {
+                assert!(save_launcher_default_model_at(&path, "gpt-6.1-sol").is_err());
+                assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+            }
+        }
     }
 
     #[test]

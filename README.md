@@ -7,8 +7,10 @@ design, migration behavior and limitations. Upstream's MIT license is preserved.
 For PowerShell build, validation and authenticated startup, see [WINDOWS.md](WINDOWS.md).
 
 Run `claude-code-proxy claude` to launch Claude with a picker populated from the
-authenticated Codex catalog and explicit context/effort configuration. Use
-`--only-model --model gpt-6.1-sol` for that model's full default context window.
+authenticated Codex catalog and explicit context/effort configuration. On first
+launch without `--model`, choose an available model to save as the proxy's default.
+Later launches reuse it; `--model` overrides it for one launch. Use
+`--only-model` for the selected model's full default context window.
 
 Claude Code, powered by **OpenAI Codex**, **Kimi**, **Grok**, **OpenCode Go**,
 or **Cursor Agent**.

@@ -31,8 +31,8 @@ struct Cli {
 enum Commands {
     /// Launch Claude Code with discovered Codex models, context and effort
     Claude {
-        #[arg(long, default_value = "gpt-6-sol")]
-        model: String,
+        #[arg(long)]
+        model: Option<String>,
         #[arg(long)]
         effort: Option<String>,
         #[arg(long)]
@@ -464,6 +464,21 @@ mod tests {
     #[test]
     fn non_tty_stdout_selects_plain_mode() {
         assert_eq!(select_serve_mode(false, false), ServeMode::Plain);
+    }
+
+    #[test]
+    fn claude_launcher_has_no_implicit_model() {
+        let cli = Cli::try_parse_from(["claude-code-proxy", "claude"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Claude { model: None, .. })
+        ));
+        let cli =
+            Cli::try_parse_from(["claude-code-proxy", "claude", "--model", "gpt-6.1-sol"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Claude { model: Some(model), .. }) if model == "gpt-6.1-sol"
+        ));
     }
 
     #[test]

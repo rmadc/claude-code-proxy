@@ -1,6 +1,7 @@
 use crate::providers::codex::catalog::ModelMetadata;
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
+use std::io::{self, IsTerminal, Write};
 
 pub struct LaunchProfile {
     pub settings: Value,
@@ -91,8 +92,78 @@ impl Drop for SettingsFile {
     }
 }
 
+fn choose_model(
+    models: &[ModelMetadata],
+    input: &mut impl io::BufRead,
+    output: &mut impl Write,
+) -> Result<String> {
+    writeln!(
+        output,
+        "Choose a default Claude model from your Codex catalog:"
+    )?;
+    for (index, model) in models.iter().enumerate() {
+        writeln!(
+            output,
+            "  {}. {} ({}k context)",
+            index + 1,
+            model.id,
+            model.context_window / 1000
+        )?;
+    }
+    loop {
+        write!(output, "Model number (1-{}): ", models.len())?;
+        output.flush()?;
+        let mut response = String::new();
+        ensure!(
+            input.read_line(&mut response)? != 0,
+            "Model selection cancelled"
+        );
+        if let Ok(index) = response.trim().parse::<usize>()
+            && let Some(model) = index.checked_sub(1).and_then(|index| models.get(index))
+        {
+            return Ok(model.id.clone());
+        }
+        writeln!(output, "Enter a number from 1 to {}.", models.len())?;
+    }
+}
+
+fn resolve_model(
+    models: &[ModelMetadata],
+    override_model: Option<String>,
+    saved_model: Option<String>,
+    interactive: bool,
+    input: &mut impl io::BufRead,
+    output: &mut impl Write,
+) -> Result<(String, bool)> {
+    if let Some(model) = override_model {
+        ensure!(
+            models.iter().any(|available| available.id == model),
+            "Selected model {model} is not available in the authenticated catalog"
+        );
+        return Ok((model, false));
+    }
+    if let Some(model) = saved_model {
+        if models.iter().any(|available| available.id == model) {
+            return Ok((model, false));
+        }
+        ensure!(
+            interactive,
+            "Saved default model {model} is unavailable; run interactively to choose another or pass --model"
+        );
+        writeln!(
+            output,
+            "Saved default model {model} is no longer available."
+        )?;
+    }
+    ensure!(
+        interactive,
+        "No default Claude model configured; run interactively to choose one or pass --model"
+    );
+    Ok((choose_model(models, input, output)?, true))
+}
+
 pub async fn launch(
-    model: String,
+    model: Option<String>,
     effort: Option<String>,
     only_model: bool,
     print_config: bool,
@@ -104,11 +175,28 @@ pub async fn launch(
         "Claude-controlled selection requires removing CCP_CODEX_MODEL / CCP_CODEX_EFFORT and codex.model / codex.effort overrides"
     );
     let models = crate::providers::codex::catalog::fetch_catalog().await?;
+    let saved = if model.is_none() {
+        crate::config::launcher_default_model()?
+    } else {
+        None
+    };
+    let (model, save_default) = resolve_model(
+        &models,
+        model,
+        saved,
+        io::stdin().is_terminal() && io::stderr().is_terminal(),
+        &mut io::stdin().lock(),
+        &mut io::stderr().lock(),
+    )?;
     let profile = build_profile(&models, &model, effort.as_deref(), only_model)?;
     ensure!(
         profile.context_window <= 1_000_000 && profile.auto_compact_tokens >= 100_000,
         "Catalog context cannot be represented safely by this Claude Code launcher"
     );
+    if save_default {
+        crate::config::save_launcher_default_model(&model)?;
+        eprintln!("Saved default Claude model: {model}");
+    }
     if print_config {
         println!(
             "{}",
@@ -235,6 +323,82 @@ mod tests {
             auto_compact_tokens: window * 95 / 100,
         }
     }
+    #[test]
+    fn model_selection_uses_override_then_saved_default_then_prompt() {
+        let models = [model("gpt-6-sol", 272000), model("gpt-6.1-sol", 500000)];
+        let mut input = io::Cursor::new("2\n1\n");
+        let mut output = Vec::new();
+        assert_eq!(
+            resolve_model(
+                &models,
+                Some("gpt-6.1-sol".into()),
+                Some("gpt-6-sol".into()),
+                false,
+                &mut input,
+                &mut output
+            )
+            .unwrap(),
+            ("gpt-6.1-sol".into(), false)
+        );
+        assert_eq!(
+            resolve_model(
+                &models,
+                None,
+                Some("gpt-6-sol".into()),
+                false,
+                &mut input,
+                &mut output
+            )
+            .unwrap(),
+            ("gpt-6-sol".into(), false)
+        );
+        assert_eq!(
+            resolve_model(&models, None, None, true, &mut input, &mut output).unwrap(),
+            ("gpt-6.1-sol".into(), true)
+        );
+        assert!(resolve_model(&models, None, None, false, &mut input, &mut output).is_err());
+        assert_eq!(
+            resolve_model(
+                &models,
+                None,
+                Some("unavailable".into()),
+                true,
+                &mut input,
+                &mut output
+            )
+            .unwrap(),
+            ("gpt-6-sol".into(), true)
+        );
+        assert!(
+            resolve_model(
+                &models,
+                None,
+                Some("unavailable".into()),
+                false,
+                &mut input,
+                &mut output
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn model_prompt_retries_invalid_numbers_and_cancels_on_eof() {
+        let models = [model("gpt-6-sol", 272000)];
+        let mut input = io::Cursor::new("0\ninvalid\n1\n");
+        let mut output = Vec::new();
+        assert_eq!(
+            choose_model(&models, &mut input, &mut output).unwrap(),
+            "gpt-6-sol"
+        );
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("Enter a number from 1 to 1")
+        );
+        assert!(choose_model(&models, &mut io::Cursor::new(""), &mut Vec::new()).is_err());
+    }
+
     #[test]
     fn switching_never_uses_a_larger_window_than_a_selectable_model() {
         let models = [model("gpt-6-sol", 272000), model("gpt-6.1-sol", 500000)];
