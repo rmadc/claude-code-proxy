@@ -411,9 +411,8 @@ async fn bind_error_names_address_and_port() {
 }
 
 #[tokio::test]
-async fn configurable_bind_address_accepts_all_interfaces() {
-    let listener = bind_proxy_listener("0.0.0.0", 0).await.unwrap();
-    assert_eq!(listener.local_addr().unwrap().ip().to_string(), "0.0.0.0");
+async fn configurable_bind_address_rejects_unauthenticated_network_exposure() {
+    assert!(bind_proxy_listener("0.0.0.0", 0).await.is_err());
 }
 
 #[tokio::test]

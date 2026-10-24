@@ -11,14 +11,18 @@ permissions:
 jobs:
   checks:
     name: Full checks
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable action; compiler pinned below
         with:
+          toolchain: 1.99.0
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: Install tools
-        run: cargo install checkle just --locked
-      - name: Run full checks
-        run: just check-ci
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: python scripts/check-isolated.py -- --test-threads=1
+      - run: git diff --exit-code

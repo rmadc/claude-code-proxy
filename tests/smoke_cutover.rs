@@ -29,6 +29,11 @@ use tower::util::ServiceExt;
 // ---------------------------------------------------------------------------
 
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+const STATE_HOME_ENV: &str = if cfg!(windows) {
+    "LOCALAPPDATA"
+} else {
+    "XDG_STATE_HOME"
+};
 
 /// Serialize all env-var-mutating tests so they never run concurrently.
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -1876,7 +1881,7 @@ async fn smoke_codex_http_traffic_capture_writes_upstream_artifacts() {
     .await;
 
     let _traffic_env = EnvGuard::set("CCP_TRAFFIC_LOG", "1");
-    let _state_env = EnvGuard::set("XDG_STATE_HOME", state.path());
+    let _state_env = EnvGuard::set(STATE_HOME_ENV, state.path());
     let _config_env = EnvGuard::set("CCP_CONFIG_DIR", config.path());
     let _base_url_env = EnvGuard::set("CCP_CODEX_BASE_URL", &upstream);
     let _transport_env = EnvGuard::set("CCP_CODEX_TRANSPORT", "http");
@@ -1924,7 +1929,7 @@ async fn smoke_codex_http_stream_traffic_captures_downstream_events() {
     .await;
 
     let _traffic_env = EnvGuard::set("CCP_TRAFFIC_LOG", "1");
-    let _state_env = EnvGuard::set("XDG_STATE_HOME", state.path());
+    let _state_env = EnvGuard::set(STATE_HOME_ENV, state.path());
     let _config_env = EnvGuard::set("CCP_CONFIG_DIR", config.path());
     let _base_url_env = EnvGuard::set("CCP_CODEX_BASE_URL", &upstream);
     let _transport_env = EnvGuard::set("CCP_CODEX_TRANSPORT", "http");
@@ -2641,7 +2646,7 @@ async fn smoke_codex_http_truncated_upstream_writes_reducer_diagnostic() {
     .await;
 
     let _traffic_env = EnvGuard::set("CCP_TRAFFIC_LOG", "1");
-    let _state_env = EnvGuard::set("XDG_STATE_HOME", state.path());
+    let _state_env = EnvGuard::set(STATE_HOME_ENV, state.path());
     let _config_env = EnvGuard::set("CCP_CONFIG_DIR", config.path());
     let _base_url_env = EnvGuard::set("CCP_CODEX_BASE_URL", &upstream);
     let _transport_env = EnvGuard::set("CCP_CODEX_TRANSPORT", "http");
@@ -3150,7 +3155,7 @@ async fn smoke_codex_websocket_stream_retries_terminal_only_completion_with_full
     let upstream = spawn_websocket_empty_completion_then_retry_upstream(captured.clone()).await;
 
     let _traffic_env = EnvGuard::set("CCP_TRAFFIC_LOG", "1");
-    let _state_env = EnvGuard::set("XDG_STATE_HOME", state.path());
+    let _state_env = EnvGuard::set(STATE_HOME_ENV, state.path());
     let _config_env = EnvGuard::set("CCP_CONFIG_DIR", config.path());
     let _base_url_env = EnvGuard::set("CCP_CODEX_BASE_URL", &upstream);
     let _transport_env = EnvGuard::set("CCP_CODEX_TRANSPORT", "websocket");
@@ -3380,7 +3385,7 @@ async fn smoke_codex_websocket_traffic_capture_writes_upstream_artifacts() {
     let upstream = spawn_websocket_upstream(captured.clone()).await;
 
     let _traffic_env = EnvGuard::set("CCP_TRAFFIC_LOG", "1");
-    let _state_env = EnvGuard::set("XDG_STATE_HOME", state.path());
+    let _state_env = EnvGuard::set(STATE_HOME_ENV, state.path());
     let _config_env = EnvGuard::set("CCP_CONFIG_DIR", config.path());
     let _base_url_env = EnvGuard::set("CCP_CODEX_BASE_URL", &upstream);
     let _transport_env = EnvGuard::set("CCP_CODEX_TRANSPORT", "websocket");
