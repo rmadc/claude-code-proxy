@@ -49,6 +49,22 @@ Codex tokenizes text locally with `o200k_base` and adds estimates for images, en
 
 ## `GET /v1/models`
 
+With working Codex authentication, the list includes live compatible Codex model
+metadata: `max_input_tokens`, effort capabilities, and sanitized `proxy_metadata`.
+`catalog_source` distinguishes authenticated discovery from static/offline
+fallback. No raw catalog instructions or credentials are returned. Successful
+metadata is cached for five minutes; failures have a 30-second backoff.
+
+`GET /v1/models/{model_id}` returns one compatible model's metadata.
+`GET /v1/codex/models` returns the sanitized authenticated Codex catalog, or HTTP
+502 if it cannot be fetched. Both routes use the same client authentication as
+inference. The `claude` launcher requires successful live discovery and never
+silently substitutes the static catalog.
+
+Claude's discovery filters can hide provider-specific IDs. The launcher supplies
+an explicit `modelPicker` via temporary `--settings` instead of renaming GPT
+models to look like Claude models.
+
 Returns Anthropic-shaped model discovery:
 
 ```json

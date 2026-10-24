@@ -305,6 +305,16 @@ impl CodexProvider {
                 ("reqId".to_string(), serde_json::json!(&req_id)),
                 ("transport".to_string(), serde_json::json!(transport)),
                 ("model".to_string(), serde_json::json!(&resolved.model)),
+                (
+                    "reasoningEffort".to_string(),
+                    serde_json::json!(
+                        translated
+                            .reasoning
+                            .as_ref()
+                            .and_then(|r| r.effort.as_ref())
+                            .map(ToString::to_string)
+                    ),
+                ),
                 ("stream".to_string(), serde_json::json!(want_stream)),
                 (
                     "responsesLite".to_string(),
@@ -1436,7 +1446,7 @@ fn update_continuation_from_upstream(
 ///
 /// `Retry-After` is deliberately absent: clients sleep for its full value, and
 /// here that is hours. `x-should-retry: false` stops the retry loop instead,
-/// which is the honest signal â€” a spent window does not reopen on a backoff.
+/// which is the honest signal — a spent window does not reopen on a backoff.
 fn usage_limit_response(limit: &events::CodexUsageLimit) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert(

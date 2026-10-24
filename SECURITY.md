@@ -92,6 +92,21 @@ See `VALIDATION.md` for final results and commands.
 
 ## Remaining limitations
 
+The later catalog/launcher addition queries the authenticated Codex metadata
+endpoint using the coding originator, TLS verification, a timeout, a 2 MiB bound
+and no redirects. Only sanitized allowlisted model/context/effort fields are
+exposed. Raw catalog instructions and account metadata are discarded. Metadata
+discovery reuses the existing auth manager; no authentication architecture or
+credential import was added. `/v1/codex/models` and per-model metadata are covered
+by client authentication. Metadata availability is not proof of inference access.
+
+The launcher uses a generated client token in the child environment and temporary
+settings containing model metadata only. It preserves normal Claude permissions.
+Its shared context is conservative across the picker, because Claude's context
+override is process-wide; `--only-model` enables the selected default window.
+Model and effort forced proxy overrides are rejected in this mode. Diagnostic
+logs now record the translated `reasoningEffort` scalar without request content.
+
 * DPAPI does not isolate credentials from malware or another process running as
   the same user. Tokens exist in process memory; memory dumps and privileged
   access remain risks. Protect the Windows account, backups and disk encryption.

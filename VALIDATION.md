@@ -1,5 +1,38 @@
 # Validation record
 
+## Model-catalog and Claude-launcher follow-up
+
+The follow-up adds authenticated model metadata, a generated Claude `/model`
+picker, native effort selection and context configuration. Validation on
+2026-10-24:
+
+* Full isolated suite: 947 library tests, 6 CLI unit tests and 180 pre-existing
+  integration tests passed. The new catalog integration test subsequently passed,
+  for **1,134 tests** across the final feature. Authentication coverage for both
+  new metadata endpoints was rerun successfully.
+* Formatting, strict Clippy across all targets and the optimized Windows build
+  passed with the unchanged locked dependencies.
+* A local mock with disposable Claude configuration verified that installed
+  Claude Code 2.1.310 accepts the generated picker settings and emits
+  `gpt-6-sol` / `high` and `gpt-6.1-sol` / `max` in actual outgoing requests.
+* A live metadata query through the newly authorized supervised profile returned
+  seven compatible models. The generated multi-model profile selected a 272,000
+  shared context with compaction at 258,400. Raw catalog instructions and auth
+  data were not printed or persisted.
+* One short, user-authorized live inference with tools and session persistence
+  disabled returned `OK`; the proxy logged `model=gpt-6-sol`,
+  `reasoningEffort=high`, HTTP 200, approximately 1.95 seconds. Prompt/body/error
+  captures were disabled. This supersedes the original no-live-inference scope
+  below; only the new supervised profile was used by the credential manager.
+
+The native CLI print-mode check validates settings parsing and routing, not a
+screenshot of the interactive picker. Interactive `/model` and `/effort` remain
+subject to Claude's version and managed settings. Per-model seamless context
+resizing is not claimed: multi-model mode uses the smallest advertised default,
+and `--only-model` uses the selected model's full advertised default.
+
+## Original hardening validation
+
 Environment: Windows 11, PowerShell, Rust 1.99.0 MSVC, Python 3.13.
 Validation date: 2026-10-24. Baseline: upstream `v0.1.46` at
 `5261067510fd00dd5efcadab3ecf79b8e02b4f80`.

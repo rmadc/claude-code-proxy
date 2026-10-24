@@ -33,6 +33,63 @@ error, keep all copies until a protected record has been verified successfully.
 
 ## Run with client authentication
 
+### Automatic picker, effort and context discovery
+
+The `claude` launcher handles both the proxy and Claude Code. After authorizing
+your profile, run the executable from its location:
+
+```powershell
+$env:CCP_CONFIG_DIR = "$env:LOCALAPPDATA\claude-code-proxy-supervised"
+.\claude-code-proxy.exe claude --model gpt-6-sol
+```
+
+It queries the authenticated Codex catalog, supplies a `modelPicker` lineup to
+Claude, and starts an authenticated loopback proxy on a free port. Inside Claude,
+use `/model` to select a listed model and `/effort` to change reasoning effort.
+An explicit initial effort can be supplied with `--effort high`; otherwise the
+launcher uses the backend-advertised default. Proxy model/effort overrides must
+be unset so they cannot silently override the picker.
+
+The client token is passed through the child environment, never printed or
+written to the temporary settings file. The launcher does not rewrite global
+Claude settings. Claude's own model/effort persistence still applies. Exiting
+Claude stops its proxy. Normal Claude permission controls remain enabled.
+
+**Context switching limitation:** Claude's context override applies to the whole
+process. The multi-model mode therefore uses the smallest default context among
+the listed models, with compaction at no more than 95% of that window. Picker
+descriptions show each model's own context and reasoning capabilities. For the
+selected model's full default window, restrict the process to one model:
+
+```powershell
+.\claude-code-proxy.exe claude --model gpt-6.1-sol --only-model
+```
+
+For a catalog advertising 500,000 tokens, this declares a 500,000 context and
+475,000 compaction threshold. The advertised maximum override, such as 872,000,
+is informational and is not automatically enabled. Seamless per-model context
+resizing within a running Claude process is not supported by this launcher.
+
+Metadata inspection without launching Claude:
+
+```powershell
+.\claude-code-proxy.exe catalog
+.\claude-code-proxy.exe claude --model gpt-6-sol --print-config
+```
+
+Additional Claude arguments follow `--`; `--claude-bin` selects its executable
+when it is not on PATH. No native Codex credentials are imported. The picker is
+the intersection of the authenticated catalog and models the proxy translates;
+catalog advertisement does not guarantee inference access on every plan.
+Unsupported effort modes such as `ultra` are omitted. Claude exposes five named
+capability-declaration slots: the initial model is always declared and remaining
+slots are populated from the catalog. Native effort behavior for other rows
+depends on Claude's gateway handling; explicit model/effort combinations were
+verified against Claude Code 2.1.310. Use a fresh launch for the selected model's
+full capability declaration when needed.
+
+### Manual environment setup
+
 After provider authorization, the following example generates a new local
 client token without printing it, starts the locally built proxy, and configures
 Claude Code in the same PowerShell session. Choose a registered model available

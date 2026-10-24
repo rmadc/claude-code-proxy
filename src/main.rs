@@ -29,6 +29,23 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Launch Claude Code with discovered Codex models, context and effort
+    Claude {
+        #[arg(long, default_value = "gpt-6-sol")]
+        model: String,
+        #[arg(long)]
+        effort: Option<String>,
+        #[arg(long)]
+        only_model: bool,
+        #[arg(long)]
+        print_config: bool,
+        #[arg(long, default_value = "claude")]
+        claude_bin: String,
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
+    /// Fetch compatible models and capability metadata from authenticated Codex
+    Catalog,
     /// Print version information
     Version,
     /// Start the proxy server and monitor
@@ -95,6 +112,32 @@ fn main() -> Result<()> {
     });
 
     match commands {
+        Commands::Claude {
+            model,
+            effort,
+            only_model,
+            print_config,
+            claude_bin,
+            args,
+        } => tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?
+            .block_on(claude_code_proxy::claude_launcher::launch(
+                model,
+                effort,
+                only_model,
+                print_config,
+                claude_bin,
+                args,
+            )),
+        Commands::Catalog => {
+            let models = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?
+                .block_on(claude_code_proxy::providers::codex::catalog::fetch_catalog())?;
+            println!("{}", serde_json::to_string_pretty(&models)?);
+            Ok(())
+        }
         Commands::Version => {
             println!("claude-code-proxy {}", VERSION);
             Ok(())

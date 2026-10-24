@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod auth;
+pub mod claude_launcher;
 pub mod client_auth;
 pub mod config;
 pub mod logging;
