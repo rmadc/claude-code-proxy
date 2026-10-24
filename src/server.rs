@@ -51,7 +51,6 @@ use uuid::Uuid;
 
 const CLAUDE_AUTO_REVIEW_SYSTEM_PREFIX: &str =
     "You are a security monitor for autonomous AI coding agents.";
-const CODEX_AUTO_REVIEW_MODEL: &str = "gpt-6-luna";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AutoReviewRoute {
@@ -90,15 +89,14 @@ fn apply_auto_review_model(
     body: &mut crate::anthropic::schema::MessagesRequest,
     count_tokens: bool,
     configured_model: Option<&str>,
-    original_provider: &str,
+    _original_provider: &str,
 ) -> Option<AutoReviewRoute> {
     if count_tokens || !is_claude_auto_review_request(body) {
         return None;
     }
 
-    let override_model = configured_model
-        .filter(|model| !model.is_empty())
-        .or((original_provider == "codex").then_some(CODEX_AUTO_REVIEW_MODEL))?;
+    let override_model =
+        configured_model.filter(|model| !model.is_empty() && *model != "inherit")?;
     let route = AutoReviewRoute {
         requested_model: body.model.clone()?,
         override_model: override_model.to_string(),
@@ -1627,6 +1625,8 @@ async fn dispatch_request(
         .registry
         .provider_for_model(&normalized_model, session_affinity);
     let configured_auto_review_model = crate::config::auto_review_model();
+    // Classifier isolation must not depend on choosing a model override.
+    let auto_review_request = !count_tokens && is_claude_auto_review_request(&body);
     let auto_review_route = original_provider.as_ref().and_then(|provider| {
         apply_auto_review_model(
             &mut body,
@@ -1715,7 +1715,7 @@ async fn dispatch_request(
     }
 
     if !count_tokens
-        && auto_review_route.is_none()
+        && !auto_review_request
         && provider.name() != "codex"
         && let Some(session_id) = session_id.as_deref()
     {
@@ -1731,7 +1731,7 @@ async fn dispatch_request(
         session_state.as_ref(),
         provider.name(),
         &normalized_model,
-        auto_review_route.is_none(),
+        !auto_review_request,
         now,
     );
     if let Some(monitor) = state.monitor.as_ref() {
@@ -1791,7 +1791,7 @@ async fn dispatch_request(
             .handle_messages_with_conversation_identity(
                 body,
                 context,
-                if auto_review_route.is_some() {
+                if auto_review_request {
                     None
                 } else {
                     conversation_identity
@@ -2353,17 +2353,17 @@ mod auto_review_tests {
     }
 
     #[test]
-    fn codex_classifier_defaults_to_luna() {
+    fn codex_classifier_inherits_selected_model_without_explicit_override() {
         let mut classifier = request(
             "You are a security monitor for autonomous AI coding agents.",
             false,
             json!([]),
         );
-        let route = apply_auto_review_model(&mut classifier, false, None, "codex")
-            .expect("classifier should be routed");
-        assert_eq!(route.requested_model, "gpt-5.6-sol");
-        assert_eq!(route.override_model, "gpt-6-luna");
-        assert_eq!(classifier.model.as_deref(), Some("gpt-6-luna"));
+        assert!(apply_auto_review_model(&mut classifier, false, None, "codex").is_none());
+        assert_eq!(classifier.model.as_deref(), Some("gpt-5.6-sol"));
+        assert!(
+            apply_auto_review_model(&mut classifier, false, Some("inherit"), "codex").is_none()
+        );
     }
 
     #[test]
