@@ -25,7 +25,18 @@ pub fn resolve_config_dir(deps: &DirResolverEnv) -> PathBuf {
         return Path::new(override_dir).to_path_buf();
     }
 
-    if deps.platform == "win32" {
+    if matches!(deps.platform.as_str(), "windows" | "win32") {
+        // Keep installations made before the OS-name fix in place. Do not move
+        // credentials or merge two configuration trees implicitly.
+        let legacy_base = deps
+            .env
+            .get("XDG_CONFIG_HOME")
+            .cloned()
+            .unwrap_or_else(|| format!("{}/.config", deps.home));
+        let legacy = join_with_sep(&legacy_base, &["claude-code-proxy"], false);
+        if legacy.is_dir() {
+            return legacy;
+        }
         let appdata = deps
             .env
             .get("APPDATA")
@@ -34,7 +45,14 @@ pub fn resolve_config_dir(deps: &DirResolverEnv) -> PathBuf {
         return join_with_sep(&appdata, &["claude-code-proxy"], true);
     }
 
-    if deps.platform == "darwin" {
+    if matches!(deps.platform.as_str(), "macos" | "darwin") {
+        let previous = deps
+            .env
+            .get("XDG_CONFIG_HOME")
+            .map(|base| join_with_sep(base, &["claude-code-proxy"], false));
+        if let Some(previous) = previous.filter(|path| path.is_dir()) {
+            return previous;
+        }
         return join_with_sep(&deps.home, &[".config", "claude-code-proxy"], false);
     }
 
@@ -47,7 +65,7 @@ pub fn resolve_config_dir(deps: &DirResolverEnv) -> PathBuf {
 }
 
 pub fn resolve_state_dir(deps: &DirResolverEnv) -> PathBuf {
-    if deps.platform == "win32" {
+    if matches!(deps.platform.as_str(), "windows" | "win32") {
         let local = deps
             .env
             .get("LOCALAPPDATA")

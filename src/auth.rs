@@ -161,27 +161,53 @@ where
     T: Serialize + DeserializeOwned + Send + Sync + Clone,
 {
     fn load(&self) -> Result<Option<T>> {
-        let parsed = load_auth_file::<T>(&self.file);
-        if parsed.is_some() {
-            return Ok(parsed);
+        #[cfg(windows)]
+        return crate::windows_credentials::load(&self.file, &self.legacy_file);
+        #[cfg(not(windows))]
+        {
+            let parsed = load_auth_file::<T>(&self.file);
+            if parsed.is_some() {
+                return Ok(parsed);
+            }
+            if self.file == self.legacy_file {
+                return Ok(None);
+            }
+            Ok(load_auth_file::<T>(&self.legacy_file))
         }
-        if self.file == self.legacy_file {
-            return Ok(None);
-        }
-        Ok(load_auth_file::<T>(&self.legacy_file))
     }
 
     fn save(&self, value: T) -> Result<()> {
-        let path = std::path::Path::new(&self.file);
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir)?;
-            set_mode(dir, 0o700);
+        #[cfg(windows)]
+        {
+            crate::windows_credentials::save(&self.file, &value)?;
+            for path in [&self.file, &self.legacy_file] {
+                if let Err(err) = fs::remove_file(path)
+                    && err.kind() != io::ErrorKind::NotFound
+                {
+                    return Err(err.into());
+                }
+            }
+            Ok(())
         }
-        write_atomically(&self.file, &value)
+        #[cfg(not(windows))]
+        {
+            let path = std::path::Path::new(&self.file);
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir)?;
+                set_mode(dir, 0o700);
+            }
+            write_atomically(&self.file, &value)
+        }
     }
 
     fn clear(&self) -> Result<()> {
         for path in [&self.file, &self.legacy_file] {
+            #[cfg(windows)]
+            if let Err(err) = fs::remove_file(crate::windows_credentials::protected_path(path))
+                && err.kind() != io::ErrorKind::NotFound
+            {
+                return Err(err.into());
+            }
             if let Err(err) = fs::remove_file(path)
                 && err.kind() != io::ErrorKind::NotFound
             {
@@ -192,6 +218,9 @@ where
     }
 
     fn path(&self) -> String {
+        #[cfg(windows)]
+        return crate::windows_credentials::protected_path(&self.file);
+        #[cfg(not(windows))]
         self.file.clone()
     }
 }
@@ -286,6 +315,12 @@ where
 }
 
 pub fn load_auth_file<T: DeserializeOwned>(path: &str) -> Option<T> {
+    #[cfg(windows)]
+    match crate::windows_credentials::read(path) {
+        Ok(Some(value)) => return serde_json::from_value(value).ok(),
+        Err(_) => return None,
+        Ok(None) => {}
+    }
     let mut file = File::open(path).ok()?;
     let mut raw = String::new();
     file.read_to_string(&mut raw).ok()?;
@@ -293,10 +328,7 @@ pub fn load_auth_file<T: DeserializeOwned>(path: &str) -> Option<T> {
 }
 
 pub fn load_auth_file_value(path: &std::path::Path) -> Option<serde_json::Value> {
-    let mut file = File::open(path).ok()?;
-    let mut raw = String::new();
-    file.read_to_string(&mut raw).ok()?;
-    serde_json::from_str::<serde_json::Value>(&raw).ok()
+    load_auth_file(&path.to_string_lossy())
 }
 
 pub fn load_auth_file_with_legacy<T: DeserializeOwned>(
@@ -314,6 +346,15 @@ pub fn load_auth_file_with_legacy<T: DeserializeOwned>(
 }
 
 pub fn delete_auth_file(primary: &std::path::Path, legacy: &std::path::Path) -> io::Result<()> {
+    #[cfg(windows)]
+    for path in [primary, legacy] {
+        if let Err(err) = fs::remove_file(crate::windows_credentials::protected_path(
+            &path.to_string_lossy(),
+        )) && err.kind() != io::ErrorKind::NotFound
+        {
+            return Err(err);
+        }
+    }
     if let Err(err) = fs::remove_file(primary)
         && err.kind() != io::ErrorKind::NotFound
     {
@@ -361,6 +402,8 @@ pub fn write_atomically<T: Serialize>(path: &str, value: &T) -> Result<()> {
 }
 
 fn set_mode(path: &std::path::Path, mode: u32) {
+    #[cfg(not(unix))]
+    let _ = (path, mode);
     #[cfg(unix)]
     {
         if let Ok(meta) = fs::metadata(path) {
@@ -599,7 +642,10 @@ mod tests {
             store.load().unwrap().unwrap()["source"],
             json!("file-fallback")
         );
+        #[cfg(not(windows))]
         assert!(std::path::Path::new(&file).exists());
+        #[cfg(windows)]
+        assert!(std::path::Path::new(&crate::windows_credentials::protected_path(&file)).exists());
     }
 
     #[test]
@@ -619,7 +665,13 @@ mod tests {
 
         store.save(json!({"source": "file"})).unwrap();
         assert!(keychain.raw("svc", "acct").is_none());
+        #[cfg(not(windows))]
         assert_eq!(store.path(), file);
+        #[cfg(windows)]
+        assert_eq!(
+            store.path(),
+            crate::windows_credentials::protected_path(&file)
+        );
         assert_eq!(store.load().unwrap().unwrap()["source"], json!("file"));
     }
 }

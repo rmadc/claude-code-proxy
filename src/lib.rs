@@ -15,6 +15,8 @@ pub mod server;
 pub mod session;
 pub mod traffic;
 pub mod tui;
+#[cfg(windows)]
+mod windows_credentials;
 
 pub use crate::anthropic::error::{ErrorDetail, ErrorEnvelope, json_error};
 pub use crate::anthropic::schema::MessagesRequest;
