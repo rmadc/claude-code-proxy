@@ -1,5 +1,11 @@
 # claude-code-proxy
 
+This fork adds Windows credential protection and local-proxy safeguards to
+[Raine Virta's upstream project](https://github.com/raine/claude-code-proxy),
+starting from `v0.1.46`. See [SECURITY.md](SECURITY.md) for the verified findings,
+design, migration behavior and limitations. Upstream's MIT license is preserved.
+For PowerShell build, validation and authenticated startup, see [WINDOWS.md](WINDOWS.md).
+
 Claude Code, powered by **OpenAI Codex**, **Kimi**, **Grok**, **OpenCode Go**,
 or **Cursor Agent**.
 
@@ -106,11 +112,25 @@ Run `claude-code-proxy models` for the current catalog or
 `claude-code-proxy models --full` for every dynamic Cursor alias.
 
 > [!WARNING]
-> The proxy accepts local requests without client authentication. It binds to
-> `127.0.0.1` by default. Protect any non-loopback listener with a firewall or
-> authenticating reverse proxy. Provider subscriptions, model access, terms,
+> The proxy binds to `127.0.0.1` by default and accepts local requests without
+> client authentication unless `CCP_CLIENT_TOKEN` is set. Non-loopback binding
+> requires both `CCP_CLIENT_TOKEN` and `CCP_ALLOW_NETWORK=1`; use a trusted TLS
+> tunnel for remote access. Provider subscriptions, model access, terms,
 > and account enforcement remain under each provider's control. Unofficial
 > clients may carry account risk.
+
+To enable client authentication, set `CCP_CLIENT_TOKEN` to a secret of at least
+32 printable ASCII characters without spaces in the proxy environment. Set
+`ANTHROPIC_AUTH_TOKEN` to the same value in Claude Code. All routes, including
+health and monitor endpoints, require `Authorization: Bearer <token>` or
+`x-api-key: <token>`. Run the attached monitor with the same `CCP_CLIENT_TOKEN`.
+
+On Windows, the file credential store uses user-scoped DPAPI protection and
+migrates existing plaintext credentials after verifying the protected copy.
+Routine logs omit error prose and request/response bodies. `CCP_LOG_CONTENT=1`
+enables those fields, and `CCP_ERROR_CAPTURE=1` enables error capture files;
+these opt-ins can write sensitive content. Rotated logs retain three files,
+and error captures retain up to 100 files.
 
 ## Documentation
 

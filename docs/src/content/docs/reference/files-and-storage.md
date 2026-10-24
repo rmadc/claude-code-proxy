@@ -15,6 +15,13 @@ claude-code-proxy separates configuration and credentials from runtime state.
 
 Windows falls back to `%USERPROFILE%/AppData/Roaming` and `%USERPROFILE%/AppData/Local` when the corresponding environment variable is absent.
 
+On Windows, an existing configuration directory at
+`${XDG_CONFIG_HOME:-~/.config}/claude-code-proxy` continues to be used so
+configuration and credentials remain accessible. macOS likewise preserves an
+existing custom XDG configuration directory from older versions. No directories
+are moved or merged automatically; `CCP_CONFIG_DIR` always takes precedence.
+Old state/log directories remain on disk and are not automatically relocated.
+
 `CCP_CONFIG_DIR` replaces the configuration root for the current process. It does not change the state root.
 
 ## Configuration
@@ -23,15 +30,26 @@ Windows falls back to `%USERPROFILE%/AppData/Roaming` and `%USERPROFILE%/AppData
 
 ## Provider credentials
 
+Windows file stores write `<provider>/auth.json.dpapi`, encrypted with
+user-scoped Windows DPAPI. On first load, an existing plaintext `auth.json` is
+parsed, encrypted, durably written, decrypted and verified from disk before
+that source plaintext file is removed. Failure preserves the plaintext source;
+an unreadable protected copy causes an error instead of a plaintext fallback.
+The same protection applies with `CCP_CONFIG_DIR`. Protect backups too:
+deletion cannot erase old backups, filesystem snapshots, or previous disk blocks.
+DPAPI protects storage, not tokens in a running process or against another
+process running as the same Windows user. This encrypted format is not readable
+by upstream releases; rollback requires keeping this fork or signing in again.
+
 On macOS, Codex and Cursor use Keychain services:
 
 - `claude-code-proxy.codex`
 - `claude-code-proxy.cursor`
 
-Kimi and Grok use `<configuration-root>/<provider>/auth.json` on every platform. Codex and Cursor use the same file layout on Linux and Windows. File-backed credentials are written with restrictive permissions where supported.
+On Unix, Kimi and Grok use `<configuration-root>/<provider>/auth.json`, and Codex and Cursor use that file layout on Linux. On Windows, all four use the DPAPI sidecar described above. File-backed credentials are written with restrictive permissions where supported.
 
 When `CCP_CONFIG_DIR` is set, file-backed provider credentials use
-`<CCP_CONFIG_DIR>/<provider>/auth.json`, including Codex and Cursor on macOS.
+`<CCP_CONFIG_DIR>/<provider>/auth.json` (with `.dpapi` appended on Windows), including Codex and Cursor on macOS.
 `CCP_CURSOR_AUTH_TOKEN` bypasses Cursor's local credential store for that
 process.
 
@@ -47,15 +65,15 @@ Kimi stores a persistent UUID at `<configuration-root>/kimi/device_id` for file-
 
 ## Structured log
 
-`proxy.log` lives under the state root. It uses JSON Lines and rotates at 20 MiB. Known credential keys, including authorization, access tokens, refresh tokens, ID tokens, and account headers, are redacted before writing.
+`proxy.log` lives under the state root. It uses JSON Lines and rotates at 20 MiB, retaining three rotated files. Known credential keys, including authorization, access tokens, refresh tokens, ID tokens, and account headers, are redacted before writing. Routine error prose and body fields are omitted unless `CCP_LOG_CONTENT=1`. Arbitrary secrets embedded in other metadata are not guaranteed to be detected.
 
 A Homebrew service also writes `service.log` under the state root.
 
 ## Failed responses
 
-`errors/` under the state root contains JSON files for failed proxy responses. A `request_failed` log event includes `errorFile`, which points to the complete redacted payload.
+Error capture is disabled by default. `CCP_ERROR_CAPTURE=1` writes failed response JSON under `errors/` in the state root, retaining up to 100 files in ordinary sequential use. A `request_failed` log event includes `errorFile`. Concurrent writers may briefly exceed the limit.
 
-Error payloads are safer to share than raw traffic captures, but inspect their prompt-derived content and paths before publishing them.
+Error payloads can contain credentials echoed in prose, prompts, and paths despite known-key redaction. Treat them as sensitive and delete them after investigation. Existing captures are not retroactively scrubbed.
 
 ## Traffic captures
 
