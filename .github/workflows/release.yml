@@ -130,7 +130,7 @@ jobs:
           ./Create-ClaudeGPT-Shortcut.ps1 -ShortcutDirectory "$PWD/shortcut-test"
           $link = (New-Object -ComObject WScript.Shell).CreateShortcut("$PWD/shortcut-test/ClaudeGPT.lnk")
           if ($link.IconLocation -ne "$PWD\ClaudeGPT.ico,0") { throw 'Incorrect shortcut icon' }
-          if ($link.Arguments -notmatch '-EncodedCommand ') { throw 'Missing launcher command' }
+          if ($link.TargetPath -ne "$PWD\claude-code-proxy.exe" -or $link.Arguments -ne 'claude') { throw 'Incorrect executable target or arguments' }
 
   release:
     needs: [build, smoke-windows]

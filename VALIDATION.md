@@ -10,7 +10,7 @@ Validation on 2026-10-25:
   181 integration tests, using disposable configuration and synthetic credentials.
 * Synthetic shortcut checks passed, including literal paths with spaces,
   apostrophes and shell metacharacters, repeat installation without duplicates,
-  default configuration selection, and a loadable multi-size Windows ICO.
+  direct executable targeting, and a loadable multi-size Windows ICO.
 * A locally assembled release ZIP was extracted and its installer verified.
   Only the locally compiled executable's `--version` command was executed;
   no provider requests were needed for packaging checks.

@@ -152,9 +152,10 @@ choice. Claude Code must be installed and available on PATH. Keep the extracted
 folder in place; rerun the installer after moving it. The icon is a multi-size
 Windows ICO, supplied alongside the executable without changing upstream branding.
 
-The default profile is `%LOCALAPPDATA%\claude-code-proxy`. To use another existing
-profile, pass `-ConfigDirectory 'C:\path\to\profile'`. The shortcut stores only
-paths, never credentials. `-WorkingDirectory` selects Claude's starting project;
+The shortcut targets the executable directly with the `claude` argument, without
+a PowerShell wrapper. The default profile is `%LOCALAPPDATA%\claude-code-proxy`;
+an inherited `CCP_CONFIG_DIR` environment variable can override it. The shortcut
+stores only paths, never credentials. `-WorkingDirectory` selects Claude's starting project;
 it defaults to your user folder. The source checkout installer lives at
 `scripts/create-claudegpt-shortcut.ps1`; supply `-ExecutablePath` and `-IconPath`
 when running it from source.
