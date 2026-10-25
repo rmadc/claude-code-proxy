@@ -9,13 +9,13 @@ try {
     $icon = Join-Path $root 'assets/windows/ClaudeGPT.ico'
     $profile = Join-Path $scratch "profile's `$test"
     $installer = Join-Path $PSScriptRoot 'create-claudegpt-shortcut.ps1'
-    & $installer -ExecutablePath $exe -IconPath $icon -ShortcutDirectory $scratch -WorkingDirectory $scratch | Out-Null
-    & $installer -ExecutablePath $exe -IconPath $icon -ShortcutDirectory $scratch -WorkingDirectory $scratch | Out-Null
+    & $installer -ExecutablePath $exe -ClaudePath $exe -IconPath $icon -ShortcutDirectory $scratch -WorkingDirectory $scratch | Out-Null
+    & $installer -ExecutablePath $exe -ClaudePath $exe -IconPath $icon -ShortcutDirectory $scratch -WorkingDirectory $scratch | Out-Null
     if (@(Get-ChildItem -LiteralPath $scratch -Filter '*.lnk').Count -ne 1) { throw 'Duplicate shortcuts' }
     $link = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $scratch 'ClaudeGPT.lnk'))
     if ($link.IconLocation -ne "$icon,0") { throw 'Wrong icon path' }
     if ($link.WorkingDirectory -ne $scratch) { throw 'Wrong working directory' }
-    if ($link.TargetPath -ne $exe -or $link.Arguments -ne 'claude') { throw 'Shortcut must target the executable directly' }
+    if ($link.TargetPath -ne $exe -or $link.Arguments -ne ('claude --claude-bin "' + $exe + '"')) { throw 'Shortcut must target the executable directly with an explicit Claude path' }
     if (Test-Path -LiteralPath $profile) { throw 'Installer touched the credential profile' }
     Add-Type -AssemblyName System.Drawing
     $image = [Drawing.Icon]::new($icon, 48, 48)

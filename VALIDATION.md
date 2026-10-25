@@ -4,6 +4,11 @@
 
 Validation on 2026-10-25:
 
+* Correction after direct-launch testing: Windows configuration defaults to
+  `%APPDATA%` (Roaming), not `%LOCALAPPDATA%`. The local encrypted profile was
+  moved to the verified Roaming default without reading credential contents.
+  Shortcuts now specify Claude's resolved native executable explicitly, avoiding
+  reliance on Explorer inheriting a shell's PATH. Synthetic shortcut checks passed.
 * The optimized Windows executable was rebuilt from the locked dependencies.
 * Formatting and strict Clippy across all targets passed.
 * The full isolated suite passed: 951 library tests, 7 CLI unit tests and

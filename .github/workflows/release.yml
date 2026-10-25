@@ -127,10 +127,10 @@ jobs:
           Expand-Archive claude-code-proxy-windows-amd64.zip -DestinationPath .
           .\claude-code-proxy.exe --version
           New-Item -ItemType Directory shortcut-test | Out-Null
-          ./Create-ClaudeGPT-Shortcut.ps1 -ShortcutDirectory "$PWD/shortcut-test"
+          ./Create-ClaudeGPT-Shortcut.ps1 -ClaudePath "$PWD/claude-code-proxy.exe" -ShortcutDirectory "$PWD/shortcut-test"
           $link = (New-Object -ComObject WScript.Shell).CreateShortcut("$PWD/shortcut-test/ClaudeGPT.lnk")
           if ($link.IconLocation -ne "$PWD\ClaudeGPT.ico,0") { throw 'Incorrect shortcut icon' }
-          if ($link.TargetPath -ne "$PWD\claude-code-proxy.exe" -or $link.Arguments -ne 'claude') { throw 'Incorrect executable target or arguments' }
+          if ($link.TargetPath -ne "$PWD\claude-code-proxy.exe" -or $link.Arguments -ne ('claude --claude-bin "' + "$PWD\claude-code-proxy.exe" + '"')) { throw 'Incorrect executable target or arguments' }
 
   release:
     needs: [build, smoke-windows]
