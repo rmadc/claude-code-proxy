@@ -1,5 +1,19 @@
 # Validation record
 
+## Automatic first-run sign-in
+
+The launcher now reuses the existing browser login only when credentials are
+absent and the session is interactive. A bare executable launch selects the
+Claude launcher; standalone server mode remains explicit through `serve`.
+Synthetic tests cover login persistence, existing authentication, storage errors,
+cancelled login and noninteractive operation. The new CLI regression and compiled
+release checks confirm that bare launch, `claude`, and `claude --print-config`
+fail without starting browser authentication when run noninteractively with an
+empty disposable profile. Formatting, strict Clippy and the locked release build
+passed. The full isolated suite passed (953 library, 7 binary and 181 integration
+tests), followed by the additional CLI regression test. No real sign-in was
+performed to validate this change.
+
 ## Windows launcher packaging follow-up
 
 Validation on 2026-10-25:

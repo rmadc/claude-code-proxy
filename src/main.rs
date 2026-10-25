@@ -106,9 +106,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let commands = cli.command.unwrap_or(Commands::Serve {
-        port: None,
-        no_monitor: false,
+    let commands = cli.command.unwrap_or(Commands::Claude {
+        model: None,
+        effort: None,
+        only_model: false,
+        print_config: false,
+        claude_bin: "claude".into(),
+        args: Vec::new(),
     });
 
     match commands {

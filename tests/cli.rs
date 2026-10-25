@@ -13,6 +13,24 @@ use std::{
 use tempfile::TempDir;
 
 #[test]
+fn launcher_requires_login_without_opening_browser_noninteractively()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = TempDir::new()?;
+    for args in [vec![], vec!["claude"], vec!["claude", "--print-config"]] {
+        let mut cmd = Command::cargo_bin("claude-code-proxy")?;
+        cmd.args(args)
+            .env("CCP_CONFIG_DIR", temp.path())
+            .env("HOME", temp.path())
+            .env("USERPROFILE", temp.path())
+            .timeout(std::time::Duration::from_secs(10))
+            .assert()
+            .failure()
+            .stderr(contains("Not authenticated. Run interactively"));
+    }
+    Ok(())
+}
+
+#[test]
 fn version_aliases_print_expected_version() -> Result<(), Box<dyn std::error::Error>> {
     let expected = format!("claude-code-proxy {}", env!("CARGO_PKG_VERSION"));
 

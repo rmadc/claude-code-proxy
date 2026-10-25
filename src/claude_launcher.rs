@@ -162,6 +162,26 @@ fn resolve_model(
     Ok((choose_model(models, input, output)?, true))
 }
 
+fn ensure_launcher_auth(
+    mut authenticated: impl FnMut() -> Result<bool>,
+    login: impl FnOnce() -> Result<()>,
+    allow_login: bool,
+) -> Result<()> {
+    if authenticated()? {
+        return Ok(());
+    }
+    ensure!(
+        allow_login,
+        "Not authenticated. Run interactively to sign in, or run: claude-code-proxy codex auth login"
+    );
+    login()?;
+    ensure!(
+        authenticated()?,
+        "Sign-in did not save authentication; model discovery was not started"
+    );
+    Ok(())
+}
+
 pub async fn launch(
     model: Option<String>,
     effort: Option<String>,
@@ -174,6 +194,25 @@ pub async fn launch(
         crate::config::codex_model().is_none() && crate::config::codex_effort().is_none(),
         "Claude-controlled selection requires removing CCP_CODEX_MODEL / CCP_CODEX_EFFORT and codex.model / codex.effort overrides"
     );
+    let interactive = io::stdin().is_terminal() && io::stderr().is_terminal();
+    tokio::task::spawn_blocking(move || {
+        ensure_launcher_auth(
+            || {
+                Ok(crate::providers::codex::auth::token_store::file_store()
+                    .load_auth()?
+                    .is_some())
+            },
+            || {
+                use crate::provider::CliHandlers;
+                eprintln!(
+                    "Sign in to Codex to set up ClaudeGPT. Opening browser authentication..."
+                );
+                crate::providers::codex::CODEX_CLI.login()
+            },
+            interactive && !print_config,
+        )
+    })
+    .await??;
     let models = crate::providers::codex::catalog::fetch_catalog().await?;
     let saved = if model.is_none() {
         crate::config::launcher_default_model()?
@@ -245,6 +284,18 @@ pub async fn launch(
     options
         .open(&file.0)?
         .write_all(serde_json::to_string(&profile.settings)?.as_bytes())?;
+    // Explorer may not inherit the PATH used by an interactive PowerShell.
+    #[cfg(windows)]
+    let executable = if executable == "claude" {
+        std::env::var_os("USERPROFILE")
+            .map(std::path::PathBuf::from)
+            .map(|home| home.join(".local/bin/claude.exe"))
+            .filter(|path| path.is_file())
+            .map(|path| path.into_os_string())
+            .unwrap_or_else(|| executable.into())
+    } else {
+        std::ffi::OsString::from(executable)
+    };
     let mut command = std::process::Command::new(executable);
     command
         .args(["--settings"])
@@ -313,6 +364,45 @@ pub async fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn first_run_auth_only_logs_in_when_missing_and_interactive() {
+        use std::cell::Cell;
+        let saved = Cell::new(false);
+        ensure_launcher_auth(
+            || Ok(saved.get()),
+            || {
+                saved.set(true);
+                Ok(())
+            },
+            true,
+        )
+        .unwrap();
+        assert!(saved.get());
+        ensure_launcher_auth(|| Ok(true), || panic!("existing auth must be reused"), true).unwrap();
+        assert!(
+            ensure_launcher_auth(|| Ok(false), || panic!("noninteractive login"), false).is_err()
+        );
+    }
+    #[test]
+    fn first_run_auth_fails_closed_on_storage_or_login_failure() {
+        assert!(
+            ensure_launcher_auth(
+                || anyhow::bail!("unreadable synthetic store"),
+                || panic!("must not overwrite"),
+                true
+            )
+            .is_err()
+        );
+        assert!(
+            ensure_launcher_auth(
+                || Ok(false),
+                || anyhow::bail!("cancelled synthetic login"),
+                true
+            )
+            .is_err()
+        );
+        assert!(ensure_launcher_auth(|| Ok(false), || Ok(()), true).is_err());
+    }
     fn model(id: &str, window: u64) -> ModelMetadata {
         ModelMetadata {
             id: id.into(),

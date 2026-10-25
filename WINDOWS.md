@@ -35,8 +35,12 @@ error, keep all copies until a protected record has been verified successfully.
 
 ### Automatic picker, effort and context discovery
 
-The `claude` launcher handles both the proxy and Claude Code. After authorizing
-your profile, run the executable from its location:
+Running the executable with no arguments (or with `claude`) launches both the
+proxy and Claude Code. Missing authentication starts browser sign-in before model
+selection in an interactive terminal; no separate login command is required.
+Existing authentication is reused, including normal token refresh. An unreadable
+credential store or a network/refresh error stops startup without replacing it.
+Run the executable from its location:
 
 ```powershell
 .\claude-code-proxy.exe claude

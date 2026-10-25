@@ -46,6 +46,15 @@ throughput.
 
 ## Quick start with Codex
 
+In this fork, run `claude-code-proxy` (or `claude-code-proxy claude`) to launch
+Claude Code and its local proxy together. On first interactive launch, it opens
+the existing browser sign-in flow when no authentication is stored, then fetches
+models and asks you to save a default. Existing authentication is reused and
+expired tokens use normal refresh. Storage, refresh and network errors do not
+silently trigger a new sign-in. Noninteractive launches and `--print-config`
+require authentication to be configured beforehand. Standalone proxy mode remains
+available explicitly through `claude-code-proxy serve`.
+
 Install on macOS or Linux:
 
 ```sh
