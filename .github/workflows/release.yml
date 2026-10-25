@@ -100,8 +100,12 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${env:BIN_NAME}.exe" "dist/${env:BIN_NAME}.exe"
+          Copy-Item assets/windows/ClaudeGPT.ico dist/ClaudeGPT.ico
+          Copy-Item scripts/create-claudegpt-shortcut.ps1 dist/Create-ClaudeGPT-Shortcut.ps1
+          Copy-Item assets/windows/README.md dist/ICON-NOTICES.md
+          Copy-Item LICENSE dist/LICENSE
           $archive = "${env:BIN_NAME}-${{ matrix.platform }}.${{ matrix.archive }}"
-          Compress-Archive -Path "dist/${env:BIN_NAME}.exe" -DestinationPath $archive -Force
+          Compress-Archive -Path "dist/${env:BIN_NAME}.exe", dist/ClaudeGPT.ico, dist/Create-ClaudeGPT-Shortcut.ps1, dist/ICON-NOTICES.md, dist/LICENSE -DestinationPath $archive -Force
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
           "$hash  $archive" | Out-File -FilePath "${env:BIN_NAME}-${{ matrix.platform }}.sha256" -Encoding ascii
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -122,6 +126,11 @@ jobs:
         run: |
           Expand-Archive claude-code-proxy-windows-amd64.zip -DestinationPath .
           .\claude-code-proxy.exe --version
+          New-Item -ItemType Directory shortcut-test | Out-Null
+          ./Create-ClaudeGPT-Shortcut.ps1 -ShortcutDirectory "$PWD/shortcut-test"
+          $link = (New-Object -ComObject WScript.Shell).CreateShortcut("$PWD/shortcut-test/ClaudeGPT.lnk")
+          if ($link.IconLocation -ne "$PWD\ClaudeGPT.ico,0") { throw 'Incorrect shortcut icon' }
+          if ($link.Arguments -notmatch '-EncodedCommand ') { throw 'Missing launcher command' }
 
   release:
     needs: [build, smoke-windows]

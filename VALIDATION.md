@@ -1,5 +1,23 @@
 # Validation record
 
+## Windows launcher packaging follow-up
+
+Validation on 2026-10-25:
+
+* The optimized Windows executable was rebuilt from the locked dependencies.
+* Formatting and strict Clippy across all targets passed.
+* The full isolated suite passed: 951 library tests, 7 CLI unit tests and
+  181 integration tests, using disposable configuration and synthetic credentials.
+* Synthetic shortcut checks passed, including literal paths with spaces,
+  apostrophes and shell metacharacters, repeat installation without duplicates,
+  default configuration selection, and a loadable multi-size Windows ICO.
+* A locally assembled release ZIP was extracted and its installer verified.
+  Only the locally compiled executable's `--version` command was executed;
+  no provider requests were needed for packaging checks.
+* The user-authorized local profile directory was renamed from the temporary
+  supervised name to the normal Windows default, preserving encrypted files
+  without reading credentials. The desktop shortcut now uses that default.
+
 ## Model-catalog and Claude-launcher follow-up
 
 The follow-up adds authenticated model metadata, a generated Claude `/model`

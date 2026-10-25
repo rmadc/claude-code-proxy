@@ -39,9 +39,12 @@ The `claude` launcher handles both the proxy and Claude Code. After authorizing
 your profile, run the executable from its location:
 
 ```powershell
-$env:CCP_CONFIG_DIR = "$env:LOCALAPPDATA\claude-code-proxy-supervised"
 .\claude-code-proxy.exe claude
 ```
+
+The default Windows profile is `%LOCALAPPDATA%\claude-code-proxy`; no environment
+override is required. Set `CCP_CONFIG_DIR` only when deliberately using a separate
+profile.
 
 On first launch without `--model`, the launcher fetches compatible models and
 prompts you to choose one, saving it as `claudeDefaultModel` in the proxy's
@@ -133,3 +136,25 @@ Remove-Item Env:CCP_CLIENT_TOKEN, Env:ANTHROPIC_AUTH_TOKEN
 Diagnostic opt-ins are `CCP_TRAFFIC_LOG=1`, `CCP_ERROR_CAPTURE=1`, and
 `CCP_LOG_CONTENT=1`. They can record sensitive content. Traffic captures have no
 automatic aggregate retention; remove them after a focused investigation.
+
+## ClaudeGPT desktop shortcut
+
+Windows release ZIPs include `ClaudeGPT.ico` and `Create-ClaudeGPT-Shortcut.ps1`.
+Extract the ZIP into a permanent folder, then run:
+
+```powershell
+& .\Create-ClaudeGPT-Shortcut.ps1
+```
+
+This creates or updates one desktop shortcut called **ClaudeGPT**. It launches
+Claude Code and its authenticated loopback proxy together, using the saved model
+choice. Claude Code must be installed and available on PATH. Keep the extracted
+folder in place; rerun the installer after moving it. The icon is a multi-size
+Windows ICO, supplied alongside the executable without changing upstream branding.
+
+The default profile is `%LOCALAPPDATA%\claude-code-proxy`. To use another existing
+profile, pass `-ConfigDirectory 'C:\path\to\profile'`. The shortcut stores only
+paths, never credentials. `-WorkingDirectory` selects Claude's starting project;
+it defaults to your user folder. The source checkout installer lives at
+`scripts/create-claudegpt-shortcut.ps1`; supply `-ExecutablePath` and `-IconPath`
+when running it from source.
